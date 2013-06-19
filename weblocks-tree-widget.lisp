@@ -158,8 +158,12 @@
              (loop for i in levels-left do 
                    (if (getf i :firstp)
                      (<:as-is ".")
-                     (<:as-is "-"))
-                   (<:as-is "--")))
+                     (if straight-column-captions 
+                       (<:as-is "&nbsp;")
+                       (<:as-is "-")))
+                   (if straight-column-captions
+                     (<:as-is "&nbsp;&nbsp;")
+                     (<:as-is "--"))))
            (<:as-is value))))
 
 (weblocks::deftemplate :tree-branches-presentation-field-value-wt 'tree-branches-presentation-field-value-wt)
