@@ -144,7 +144,7 @@
 
 (defun tree-branches-presentation-field-value-wt (&key value level lastp single-child-p lastp-map levels-left straight-column-captions)
   (yaclml:with-yaclml-output-to-string
-    (<:div :style "font-family:monospace;"
+    (<:div :style "font-family:monospace;white-space:nowrap;"
            (loop for j in lastp-map 
                  do 
                  (if j 
