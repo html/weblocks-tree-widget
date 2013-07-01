@@ -6,7 +6,6 @@
            ()
            (:default-initargs 
              :allow-pagination-p nil 
-             :allow-add-p nil 
              :allow-delete-p nil 
              :allow-select-p nil))
 
@@ -68,8 +67,13 @@
 
 (weblocks::deftemplate :tree-view-body-row-wt 'tree-view-body-row-wt)
 
+(defun get-children-values (parent children)
+  (if (functionp children)
+    (funcall children parent)
+    children))
+
 ;; Table body
-(defmethod with-table-view-body-row ((view tree-view) obj widget &rest args &key alternp (level 0) lastp single-child-p lastp-map levels-count &allow-other-keys)
+(defmethod with-table-view-body-row :around ((view tree-view) obj widget &rest args &key alternp (level 0) lastp single-child-p lastp-map levels-count &allow-other-keys)
   (let ((tree-branches-data 
           (list 
             :single-child-p single-child-p
@@ -96,15 +100,16 @@
         :prefix (weblocks::capture-weblocks-output (weblocks::safe-apply (sequence-view-row-prefix-fn view) view obj args))
         :row-class (if alternp "altern" nil)
         :children-content (weblocks::capture-weblocks-output
-                            (loop for i in (getf obj :children)
+                            (let ((children (get-children-values (getf obj :item) (getf obj :children))))
+                              (loop for i in children
                                   for j from 0 do 
                                   (with-table-view-body-row 
                                     view i widget 
                                     :level (1+ level) 
-                                    :lastp (= j (1- (length (getf obj :children))))
-                                    :single-child-p (= (length (getf obj :children)) 1)
-                                    :lastp-map (append lastp-map (list (= j (1- (length (getf obj :children))))))
-                                    :levels-count levels-count)))
+                                    :lastp (= j (1- (length children)))
+                                    :single-child-p (= (length children) 1)
+                                    :lastp-map (append lastp-map (list (= j (1- (length children)))))
+                                    :levels-count levels-count))))
         :suffix (weblocks::capture-weblocks-output (weblocks::safe-apply (sequence-view-row-suffix-fn view) view obj args)))
       *weblocks-output-stream*)))
 
@@ -112,6 +117,14 @@
   (call-next-method view (if (listp obj) 
                            (getf obj :item)
                            obj) widget))
+
+(defun get-items-tree-levels-count (items &optional (levels-count 1))
+  (loop for i in items 
+        maximizing 
+        (let ((children (get-children-values (getf i :item) (getf i :children))))
+          (if children
+            (get-items-tree-levels-count children (1+ levels-count))
+            levels-count))))
 
 (defmethod render-object-view-impl ((obj sequence) (view tree-view) widget &rest args &key
                                                    (fields-prefix-fn (view-fields-default-prefix-fn view))
@@ -123,7 +136,8 @@
                   (lambda (view obj widget &rest args)
                     (apply #'with-table-view-header-row view obj widget args))
                   (lambda (view obj widget &rest args)
-                    (let ((row-num -1))
+                    (let ((row-num -1)
+                          (levels-count (get-items-tree-levels-count obj)))
                       (let ((i 0))
                         (mapc (lambda (item)
                                 (apply #'with-table-view-body-row view item
@@ -132,7 +146,7 @@
                                        :lastp (= i (1- (length obj)))
                                        :single-child-p (= (length obj) 1)
                                        :lastp-map (list (= i (1- (length obj))))
-                                       :levels-count 3
+                                       :levels-count levels-count
                                        args)
                                 (incf i))
                               obj))))
@@ -180,3 +194,139 @@
                     :straight-column-captions (slot-value presentation 'straight-column-captions)
                     (tree-view-field-current-row-info field)))
       *weblocks-output-stream*)))
+
+(defmethod dataedit-add-items-flow ((obj tree-widget) sel)
+  "Initializes the flow for adding items to the dataedit."
+  (declare (ignore sel))
+  (cont:with-call/cc
+    (setf (dataedit-item-widget obj)
+          (dataedit-create-new-item-widget obj))
+    (setf (dataedit-ui-state obj) :add)
+    (do-dialog "" (dataedit-item-widget obj))
+    (setf (dataedit-item-widget obj) nil)
+    (dataedit-reset-state obj)))
+
+(defmethod dataedit-create-new-item-widget ((grid tree-widget))
+  (make-instance 'dataform
+                 :data (make-instance (dataseq-data-form-class grid))
+                 :class-store (dataseq-class-store grid)
+                 :ui-state :form
+                 :on-cancel (lambda/cc (obj)
+                              (declare (ignore obj))
+                              (answer (dataedit-item-widget grid) nil))
+                 :on-success (lambda/cc (obj)
+                               (answer (dataedit-item-widget grid) t))
+                 :data-view (dataedit-item-data-view grid)
+                 :form-view (dataedit-item-form-view grid)))
+
+(defmethod render-widget-body ((obj tree-widget) &rest args &key
+                                                 pre-data-mining-fn post-data-mining-fn)
+  (declare (ignore args))
+  (dataedit-update-operations obj)
+  ;; Do necessary bookkeeping
+  (dataseq-update-sort-column obj)
+  (when (dataseq-allow-pagination-p obj)
+    (setf (pagination-total-items (dataseq-pagination-widget obj))
+          (dataseq-data-count obj)))
+  ;; Render Data mining
+  (safe-funcall pre-data-mining-fn obj)
+  (when (and (>= (dataseq-data-count obj) 1)
+             (or (dataseq-allow-select-p obj)
+                 (dataseq-show-total-items-count-p obj)))
+    (apply #'dataseq-render-mining-bar obj args))
+  (safe-funcall post-data-mining-fn obj)
+  ;; Render flash
+  (render-widget (dataseq-flash obj))
+  ;; Render Body
+  (flet ((render-body ()
+           ;; Render items
+           (apply #'render-dataseq-body obj args)
+           ;; Render item ops
+           (when (and (dataseq-allow-operations-p obj)
+                      (or (dataseq-item-ops obj)
+                          (dataseq-common-ops obj)))
+             (apply #'dataseq-render-operations obj args))))
+    (if (dataseq-wrap-body-in-form-p obj)
+      (with-html-form (:get (make-action (alexandria:curry #'dataseq-operations-action obj))
+                       :class "dataseq-form")
+        (render-body))
+      (render-body)))
+  ;; Render Pagination
+  (when (dataseq-allow-pagination-p obj)
+    (dataseq-render-pagination-widget obj)))
+
+(defun value-with-context (variable &rest context)
+  (cond 
+    ((function-designator-p variable)
+     (apply variable context))
+    (t variable)))
+
+(defun implode (glue-or-pieces &optional (pieces nil pieces-given-p))
+  (unless pieces-given-p 
+    (return-from implode (implode "" glue-or-pieces)))
+
+  (format nil "~{~A~}"
+          (cdr (loop for i in pieces append 
+                     (list glue-or-pieces i)))))
+
+(setf (fdefinition 'join) (fdefinition 'implode))
+
+(defun action-links-reader (grid form-view &key (adding-allowed-p t) (editing-allowed-p t) (deleting-allowed-p t) 
+                                 make-new-item 
+                                 store)
+  (lambda (item)
+    (let ((content))
+      (when (value-with-context adding-allowed-p :item item :tree grid :view form-view)
+        (push (weblocks::capture-weblocks-output 
+                (render-link 
+                  (lambda/cc (&rest args)
+                    (let ((form))
+                      (setf form (make-instance 
+                                   'dataform
+                                   :data (if make-new-item 
+                                           (funcall make-new-item :parent item :tree grid :view form-view)
+                                           (make-instance (dataseq-data-form-class grid) :parent item))
+                                   :class-store (or (value-with-context store :item item :tree grid :view form-view) (dataseq-class-store grid))
+                                   :ui-state :form
+                                   :on-cancel (lambda/cc (obj)
+                                                (declare (ignore obj))
+                                                (answer form nil))
+                                   :on-success (lambda/cc (obj)
+                                                 (answer form t))
+                                   :data-view (dataedit-item-data-view grid)
+                                   :form-view form-view))
+                      (do-dialog "" form)
+                      (dataedit-reset-state grid)))
+                  (translate "add child"))) content))
+      (when (value-with-context editing-allowed-p :item item :tree grid :view form-view)
+        (push 
+          (weblocks::capture-weblocks-output 
+            (render-link 
+              (lambda/cc (&rest args)
+                (let ((form))
+                  (setf form (make-instance 'dataform
+                                            :data item
+                                            :class-store (dataseq-class-store grid)
+                                            :ui-state :form
+                                            :on-cancel (lambda/cc (obj)
+                                                         (declare (ignore obj))
+                                                         (answer form nil))
+                                            :on-success (lambda/cc (obj)
+                                                          (answer form t))
+                                            :data-view (dataedit-item-data-view grid)
+                                            :form-view form-view))
+                  (do-dialog "" form)
+                  (dataedit-reset-state grid)))
+              (translate "edit item"))) content))
+      (when (value-with-context deleting-allowed-p :item item :tree grid :view form-view)
+        (push 
+          (weblocks::capture-weblocks-output 
+            (render-link 
+              (lambda/cc (&rest args)
+                (when (do-confirmation 
+                        (format nil "Delete ~A ?" 
+                                (proper-number-form 1 (humanize-name (type-of item)))))
+                  (delete-one item)
+                  (mark-dirty grid)))
+              (translate "delete item"))) content))
+      (join "&nbsp;|&nbsp;" (reverse content)))))
