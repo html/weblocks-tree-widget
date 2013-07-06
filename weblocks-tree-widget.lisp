@@ -324,9 +324,10 @@
             (render-link 
               (lambda/cc (&rest args)
                 (when (do-confirmation 
-                        (format nil "Delete ~A ?" 
-                                (proper-number-form 1 (humanize-name (type-of item)))))
-                  (delete-one item)
+                        (format nil (translate "Delete ~A ?") 
+                                (translate (humanize-name (type-of item)) :count :one :genitive-form-p t))
+                        :type :yes/no)
+                  (weblocks-stores:delete-persistent-object (dataseq-class-store grid) item)
                   (mark-dirty grid)))
               (translate "delete item"))) content))
       (join "&nbsp;|&nbsp;" (reverse content)))))
