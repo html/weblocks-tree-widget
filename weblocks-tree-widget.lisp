@@ -7,7 +7,8 @@
            (:default-initargs 
              :allow-pagination-p nil 
              :allow-delete-p nil 
-             :allow-select-p nil))
+             :allow-select-p nil 
+             :allow-operations-p nil))
 
 (defmethod dataseq-render-mining-bar ((obj tree-widget) &rest args)
   (declare (ignore args)))
