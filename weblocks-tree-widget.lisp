@@ -3,12 +3,13 @@
 (in-package #:weblocks-tree-widget)
 
 (defwidget tree-widget (gridedit)
-           ()
-           (:default-initargs 
-             :allow-pagination-p nil 
-             :allow-delete-p nil 
-             :allow-select-p nil 
-             :allow-operations-p nil))
+  ((expand-all-items-p :initform t :initarg :expand-all-items-p)
+   (expanded-items :initform nil))
+  (:default-initargs 
+    :allow-pagination-p nil 
+    :allow-delete-p nil 
+    :allow-select-p nil 
+    :allow-operations-p nil))
 
 (defmethod dataseq-render-mining-bar ((obj tree-widget) &rest args)
   (declare (ignore args)))
@@ -31,12 +32,12 @@
                                       (humanize-sort-direction
                                         (dataseq-sort-direction obj))))
                             nil)
-                 :custom-fields nil #+l(weblocks::append-custom-fields
+                 :custom-fields (weblocks::append-custom-fields
                                   (remove nil
                                           (list
                                             (when (dataseq-allow-select-p obj)
                                               (cons 0 (weblocks::make-select-field obj)))
-                                            (when (and (dataseq-allow-drilldown-p obj)
+                                            #+l(when (and (dataseq-allow-drilldown-p obj)
                                                        (dataseq-on-drilldown obj))
                                               (weblocks::make-drilldown-field obj))))
                                   args)
@@ -73,8 +74,13 @@
     (funcall children parent)
     children))
 
+(defmethod row-expanded-p ((widget tree-widget) obj)
+  (or (slot-value widget 'expand-all-items-p)
+      (find obj (slot-value widget 'expanded-items) 
+            :test #'equal)))
+
 ;; Table body
-(defmethod with-table-view-body-row :around ((view tree-view) obj widget &rest args &key alternp (level 0) lastp single-child-p lastp-map levels-count &allow-other-keys)
+(defmethod with-table-view-body-row :around ((view tree-view) obj widget &rest args &key alternp (level 0) lastp single-child-p lastp-map levels-count custom-fields &allow-other-keys)
   (let ((tree-branches-data 
           (list 
             :single-child-p single-child-p
@@ -100,17 +106,20 @@
         :content (weblocks::capture-weblocks-output (apply #'render-table-view-body-row view (getf obj :item) widget args))
         :prefix (weblocks::capture-weblocks-output (weblocks::safe-apply (sequence-view-row-prefix-fn view) view obj args))
         :row-class (if alternp "altern" nil)
-        :children-content (weblocks::capture-weblocks-output
-                            (let ((children (get-children-values (getf obj :item) (getf obj :children))))
-                              (loop for i in children
-                                  for j from 0 do 
-                                  (with-table-view-body-row 
-                                    view i widget 
-                                    :level (1+ level) 
-                                    :lastp (= j (1- (length children)))
-                                    :single-child-p (= (length children) 1)
-                                    :lastp-map (append lastp-map (list (= j (1- (length children)))))
-                                    :levels-count levels-count))))
+        :children-content (if (row-expanded-p widget (getf obj :item))
+                            (weblocks::capture-weblocks-output
+                              (let ((children (get-children-values (getf obj :item) (getf obj :children))))
+                                (loop for i in children
+                                      for j from 0 do 
+                                      (with-table-view-body-row 
+                                        view i widget 
+                                        :level (1+ level) 
+                                        :lastp (= j (1- (length children)))
+                                        :single-child-p (= (length children) 1)
+                                        :lastp-map (append lastp-map (list (= j (1- (length children)))))
+                                        :levels-count levels-count 
+                                        :custom-fields custom-fields))))
+                            "")
         :suffix (weblocks::capture-weblocks-output (weblocks::safe-apply (sequence-view-row-suffix-fn view) view obj args)))
       *weblocks-output-stream*)))
 
@@ -272,12 +281,37 @@
 
 (setf (fdefinition 'join) (fdefinition 'implode))
 
-(defun action-links-reader (grid form-view &key (adding-allowed-p t) (editing-allowed-p t) (deleting-allowed-p t) 
+(defun action-links-reader (tree form-view &key (adding-allowed-p t) (editing-allowed-p t) (deleting-allowed-p t) 
+                                 (collapse-allowed-p t)
+                                 (expand-allowed-p t)
                                  make-new-item 
                                  store)
   (lambda (item)
+    (setf tree (if (functionp tree) (funcall tree) tree))
+
     (let ((content))
-      (when (value-with-context adding-allowed-p :item item :tree grid :view form-view)
+      (when (value-with-context expand-allowed-p :item item :tree tree :view form-view)
+        (push (weblocks::capture-weblocks-output 
+                (render-link 
+                  (lambda (&rest args)
+                    (pushnew 
+                      item
+                      (slot-value tree 'expanded-items)
+                      :test #'equal))
+                  (translate "expand"))) content))
+      (when (value-with-context collapse-allowed-p :item item :tree tree :view form-view)
+        (push (weblocks::capture-weblocks-output 
+                (render-link 
+                  (lambda (&rest args)
+                    (let ((items-to-collapse 
+                            (tree->list-of-objects 
+                              (get-subtree-of-item (tree-data-expanded tree) item))))
+                      (setf (slot-value tree 'expanded-items)
+                            (loop for i in (slot-value tree 'expanded-items) 
+                                  unless (find i items-to-collapse :test #'equal)
+                                  collect i))))
+                  (translate "collapse"))) content))
+      (when (value-with-context adding-allowed-p :item item :tree tree :view form-view)
         (push (weblocks::capture-weblocks-output 
                 (render-link 
                   (lambda/cc (&rest args)
@@ -285,21 +319,21 @@
                       (setf form (make-instance 
                                    'dataform
                                    :data (if make-new-item 
-                                           (funcall make-new-item :parent item :tree grid :view form-view)
-                                           (make-instance (dataseq-data-form-class grid) :parent item))
-                                   :class-store (or (value-with-context store :item item :tree grid :view form-view) (dataseq-class-store grid))
+                                           (funcall make-new-item :parent item :tree tree :view form-view)
+                                           (make-instance (dataseq-data-form-class tree) :parent item))
+                                   :class-store (or (value-with-context store :item item :tree tree :view form-view) (dataseq-class-store tree))
                                    :ui-state :form
                                    :on-cancel (lambda/cc (obj)
                                                 (declare (ignore obj))
                                                 (answer form nil))
                                    :on-success (lambda/cc (obj)
                                                  (answer form t))
-                                   :data-view (dataedit-item-data-view grid)
+                                   :data-view (dataedit-item-data-view tree)
                                    :form-view form-view))
                       (do-dialog "" form)
-                      (dataedit-reset-state grid)))
+                      (dataedit-reset-state tree)))
                   (translate "add child"))) content))
-      (when (value-with-context editing-allowed-p :item item :tree grid :view form-view)
+      (when (value-with-context editing-allowed-p :item item :tree tree :view form-view)
         (push 
           (weblocks::capture-weblocks-output 
             (render-link 
@@ -307,19 +341,19 @@
                 (let ((form))
                   (setf form (make-instance 'dataform
                                             :data item
-                                            :class-store (dataseq-class-store grid)
+                                            :class-store (dataseq-class-store tree)
                                             :ui-state :form
                                             :on-cancel (lambda/cc (obj)
                                                          (declare (ignore obj))
                                                          (answer form nil))
                                             :on-success (lambda/cc (obj)
                                                           (answer form t))
-                                            :data-view (dataedit-item-data-view grid)
+                                            :data-view (dataedit-item-data-view tree)
                                             :form-view form-view))
                   (do-dialog "" form)
-                  (dataedit-reset-state grid)))
+                  (dataedit-reset-state tree)))
               (translate "edit item"))) content))
-      (when (value-with-context deleting-allowed-p :item item :tree grid :view form-view)
+      (when (value-with-context deleting-allowed-p :item item :tree tree :view form-view)
         (push 
           (weblocks::capture-weblocks-output 
             (render-link 
@@ -328,7 +362,45 @@
                         (format nil (translate "Delete ~A ?") 
                                 (translate (humanize-name (type-of item)) :count :one :genitive-form-p t))
                         :type :yes/no)
-                  (weblocks-stores:delete-persistent-object (dataseq-class-store grid) item)
-                  (mark-dirty grid)))
+                  (weblocks-stores:delete-persistent-object (dataseq-class-store tree) item)
+                  (mark-dirty tree)))
               (translate "delete item"))) content))
       (join "&nbsp;|&nbsp;" (reverse content)))))
+
+(defun expand-branches (tree expandable-p)
+  (loop for item in tree 
+        collect 
+        (let ((item-object (getf item :item)))
+          (if (funcall expandable-p item-object)
+            (setf (getf item :children) 
+                  (expand-branches (get-children-values item (getf item :children)) expandable-p))
+            (setf (getf item :children) nil))
+          item)))
+
+(defmethod tree-data-expanded ((widget tree-widget))
+  "Extracts children of expanded items. 
+   Extracts means calls children function if :children is not a list.
+   We receive tree with items user can see in web interface"
+  (expand-branches 
+    (tree-data widget) 
+    (lambda (item)
+      (row-expanded-p widget item))))
+
+(defun get-subtree-of-item (tree item &key (test #'equal))
+  "Returns subtree in which item is the value of :item key"
+  (remove-if 
+    #'null 
+    (loop for i in tree 
+          collect 
+          (cond 
+            ((funcall test (getf i :item) item)
+             i)
+            ((getf i :children)
+             (car (get-subtree-of-item (getf i :children) item :test test)))))))
+
+(defun tree->list-of-objects (tree)
+  "Recursively transforms tree items to list of objects"
+  (loop for i in tree 
+        append 
+        (list* (getf i :item)
+               (tree->list-of-objects (getf i :children)))))

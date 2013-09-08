@@ -8,27 +8,71 @@
    (title :accessor test-model-title :initarg :title) 
    (content :accessor test-model-content :initarg :content)))
 
-(defmethod tree-data ((obj tree-widget))
-  (loop for i in (all-of 'test-model) 
+(defclass test-model-2 ()
+  ((id) 
+   (title :accessor test-model-2-title :initarg :title)
+   (parent :accessor test-model-2-parent :initarg :parent)))
+
+(defclass test-model-3 ()
+  ((id) 
+   (title :accessor test-model-3-title :initarg :title)
+   (parent :accessor test-model-3-parent :initarg :parent)))
+
+(defwidget just-a-tree (tree-widget)
+  ())
+
+(defmethod tree-data ((obj just-a-tree))
+  (loop for i in (all-of 'test-model :store weblocks-selenium-tests-app::*tests-store*) 
         for m from 1 to 2
         collect 
         (list :item i 
-              :children (loop for j in (all-of 'test-model) 
+              :children (loop for j in (all-of 'test-model :store weblocks-selenium-tests-app::*tests-store*) 
                               collect 
                               (list :item j :children 
-                                    (loop for k in (all-of 'test-model)
+                                    (loop for k in (all-of 'test-model :store weblocks-selenium-tests-app::*tests-store*)
+                                          for l from 1 to 2 
+                                          collect (list :item k :children nil)))))))
+
+(defwidget expandable-tree (tree-widget)
+  ())
+
+(defmethod tree-data ((obj expandable-tree))
+  (loop for i in (all-of 'test-model :store weblocks-selenium-tests-app::*tests-store*) 
+        for m from 1 to 2
+        collect 
+        (list :item i 
+              :children (loop for j in (find-by-values 'test-model-2 :parent i :store weblocks-selenium-tests-app::*tests-store*) 
+                              collect 
+                              (list :item j :children 
+                                    (loop for k in (find-by-values 'test-model-3 :parent j :store weblocks-selenium-tests-app::*tests-store*)
                                           for l from 1 to 2 
                                           collect (list :item k :children nil)))))))
 
 (defun maybe-add-demo-records-to-test-model ()
-  (when (zerop (length (all-of 'test-model)))
-    (loop for i from 1 to 3  do
-          (persist-object 
-            weblocks-stores:*default-store*
-            (make-instance 
-              'test-model
-              :title (format nil "Element - ~A" i)
-              :content "")))))
+  (when (zerop (length (all-of 'test-model :store weblocks-selenium-tests-app::*tests-store*)))
+    (let ((i-elem)
+          (j-elem))
+      (loop for i from 1 to 3  do
+            (setf i-elem (persist-object 
+                           weblocks-selenium-tests-app::*tests-store*
+                           (make-instance 
+                             'test-model
+                             :title (format nil "Element - ~A" i)
+                             :content "")))
+            (loop for j from 1 to 3 do 
+                  (setf j-elem (persist-object 
+                                 weblocks-selenium-tests-app::*tests-store*
+                                 (make-instance 
+                                   'test-model-2
+                                   :title (format nil "Element - ~A" j)
+                                   :parent i-elem)))
+                  (loop for k from 1 to 3 do 
+                        (persist-object 
+                          weblocks-selenium-tests-app::*tests-store*
+                          (make-instance 
+                            'test-model-3
+                            :title (format nil "Element - ~A" k)
+                            :parent j-elem))))))))
 
 (defun tree-widget-demonstration-action (&rest args)
   (maybe-add-demo-records-to-test-model)
@@ -40,19 +84,49 @@
           (with-html 
             (:h1 "Tree widget demo")
             (:hr)
+            (:h2 "Simple example")
             (:p "These are two widgets with straight-column-captions option set to t and nil")))
-        (make-instance 'tree-widget 
+        (make-instance 'just-a-tree 
+                       :store weblocks-selenium-tests-app::*tests-store*
+                       :data-class 'test-model
                        :view (defview nil (:type tree :inherit-from '(:scaffold test-model))
                                       (title 
-                                        :present-as tree-branches))
-                       :data-class 'webapp-cls)
-        (make-instance 'tree-widget 
+                                        :present-as tree-branches)
+                                      (content :hidep t)))
+        (make-instance 'just-a-tree 
+                       :store weblocks-selenium-tests-app::*tests-store*
+                       :data-class 'test-model
                        :view (defview nil (:type tree :inherit-from '(:scaffold test-model))
                                       (title 
-                                        :present-as (tree-branches :straight-column-captions nil)))
-                       :data-class 'webapp-cls)
+                                        :present-as (tree-branches :straight-column-captions nil))
+                                      (content :hidep t)))
         (lambda (&rest args)
           (with-html 
+            (:h2 "Tree with collapse/expand functionality")
+            (:p "Click on the actions to see it in action")))
+        (let ((tree))
+          (flet ((expand-or-collapse-allowed-p (&key item &allow-other-keys)
+                   (not (typep item 'test-model-3))))
+            (setf tree
+                  (make-instance 'expandable-tree 
+                    :store weblocks-selenium-tests-app::*tests-store*
+                    :data-class 'test-model
+                    :expand-all-items-p nil
+                    :view (defview nil (:type tree :inherit-from '(:scaffold test-model))
+                                   (title 
+                                     :present-as tree-branches)
+                                   (content :hidep t)
+                                   (actions :present-as html 
+                                            :reader (action-links-reader 
+                                                      (lambda () tree)
+                                                      nil :adding-allowed-p nil 
+                                                      :editing-allowed-p nil
+                                                      :deleting-allowed-p nil 
+                                                      :expand-allowed-p #'expand-or-collapse-allowed-p 
+                                                      :collapse-allowed-p #'expand-or-collapse-allowed-p)))))))
+        (lambda (&rest args)
+          (with-html 
+            (:div :style "clear:both")
             (:style :type "text/css"
              ".tree-widget { float:left;margin-right:10px; }"))
           (render-link (lambda (&rest args)
