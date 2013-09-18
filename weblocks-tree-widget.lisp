@@ -48,7 +48,7 @@
 
 (defmethod tree-data ((obj tree-widget))
   "Should return (list (list :item #<store-object> :children (list (list :item #<store-object>) ...)) ...)"
-  (error "Implement tree-data method for class ~A~%" (class-of obj)))
+  (error "Inherit TREE-WIDGET and implement TREE-DATA method for it~%" (class-of obj)))
 
 (defclass tree-view (table-view) 
   ())
