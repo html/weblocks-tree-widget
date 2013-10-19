@@ -298,7 +298,7 @@
                       item
                       (slot-value tree 'expanded-items)
                       :test #'equal))
-                  (translate "expand"))) content))
+                  (widget-translate 'tree-widget :expand-item))) content))
       (when (value-with-context collapse-allowed-p :item item :tree tree :view form-view)
         (push (weblocks::capture-weblocks-output 
                 (render-link 
@@ -310,7 +310,7 @@
                             (loop for i in (slot-value tree 'expanded-items) 
                                   unless (find i items-to-collapse :test #'equal)
                                   collect i))))
-                  (translate "collapse"))) content))
+                  (widget-translate 'tree-widget :collapse-item))) content))
       (when (value-with-context adding-allowed-p :item item :tree tree :view form-view)
         (push (weblocks::capture-weblocks-output 
                 (render-link 
@@ -332,7 +332,7 @@
                                    :form-view form-view))
                       (do-dialog "" form)
                       (dataedit-reset-state tree)))
-                  (translate "add child"))) content))
+                  (widget-translate 'tree-widget :add-child-to-item))) content))
       (when (value-with-context editing-allowed-p :item item :tree tree :view form-view)
         (push 
           (weblocks::capture-weblocks-output 
@@ -352,20 +352,42 @@
                                             :form-view form-view))
                   (do-dialog "" form)
                   (dataedit-reset-state tree)))
-              (translate "edit item"))) content))
+              (widget-translate 'tree-widget :edit-item))) content))
       (when (value-with-context deleting-allowed-p :item item :tree tree :view form-view)
-        (push 
-          (weblocks::capture-weblocks-output 
-            (render-link 
-              (lambda/cc (&rest args)
-                (when (do-confirmation 
-                        (format nil (translate "Delete ~A ?") 
-                                (translate (humanize-name (type-of item)) :count :one :genitive-form-p t))
-                        :type :yes/no)
-                  (weblocks-stores:delete-persistent-object (dataseq-class-store tree) item)
-                  (mark-dirty tree)))
-              (translate "delete item"))) content))
+        (let ((delete-message 
+                (format nil  
+                        (widget-dynamic-translate 
+                          tree :delete-message (translate "Delete ~A ?"))
+                        (widget-dynamic-translate 
+                          tree
+                          (weblocks-util:concatenate-keywords :tree-item- (alexandria:make-keyword (type-of item)))
+                          (translate (humanize-name (type-of item)) :count :one :genitive-form-p t)))))
+          (push 
+            (weblocks::capture-weblocks-output 
+              (render-link 
+                (lambda/cc (&rest args)
+                           (when (do-confirmation 
+                                   delete-message
+                                   :type :yes/no)
+                             (weblocks-stores:delete-persistent-object (dataseq-class-store tree) item)
+                             (mark-dirty tree)))
+                (widget-translate 'tree-widget :delete-item))) content)))
       (join "&nbsp;|&nbsp;" (reverse content)))))
+
+(defmethod widget-translation-table append ((widget (eql 'tree-widget)) &rest args)
+  `((:delete-item       . ,(translate "delete item"))
+    (:edit-item         . ,(translate "edit item"))
+    (:add-child-to-item . ,(translate "add child"))
+    (:expand-item       . ,(translate "expand"))
+    (:collapse-item     . ,(translate "collapse"))))
+
+(defmethod widget-translation-table append ((widget tree-widget) &rest args)
+  (widget-translation-table 'tree-widget))
+
+(defmethod widget-translation-table :around ((widget tree-widget) &rest args)
+  (loop for i in (call-next-method) 
+        unless (ppcre:scan "items-delete|choose-items|item-modified|item-added|total-message" (string-downcase (car i)))
+        collect i))
 
 (defun expand-branches (tree expandable-p)
   (loop for item in tree 
