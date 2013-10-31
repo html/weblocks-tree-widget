@@ -128,7 +128,13 @@
           (with-html 
             (:div :style "clear:both")
             (:style :type "text/css"
-             ".tree-widget { float:left;margin-right:10px; }"))
+             (str 
+               (css-lite:css 
+                 (("#root .function")
+                  (:clear "both"))
+                 ((".tree-widget")
+                  (:float "left"
+                   :padding-right "10px"))))))
           (render-link (lambda (&rest args)
                          (answer widget t)) "back"))))
     (do-page widget)))
