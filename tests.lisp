@@ -21,6 +21,17 @@
 (defwidget just-a-tree (tree-widget)
   ())
 
+(defwidget tree-with-advanced-template (just-a-tree)
+           ())
+
+(weblocks::deftemplate 
+  :tree-branches-presentation-field-value-wt 
+  'weblocks-tree-widget::tree-branches-advanced-presentation-field-value-wt 
+  :context-matches (lambda (&key widget &allow-other-keys)
+                     (if (typep widget 'tree-with-advanced-template)
+                       10
+                       0)))
+
 (defmethod tree-data ((obj just-a-tree))
   (loop for i in (all-of 'test-model :store weblocks-selenium-tests-app::*tests-store*) 
         for m from 1 to 2
@@ -100,10 +111,33 @@
                                       (title 
                                         :present-as (tree-branches :straight-column-captions nil))
                                       (content :hidep t)))
+
+        (lambda (&rest args)
+          (with-html 
+            (:h2 "Tree with advanced template")
+            (:p "Similar example just with other template")))
+
+        (make-instance 'tree-with-advanced-template 
+                       :store weblocks-selenium-tests-app::*tests-store*
+                       :data-class 'test-model
+                       :view (defview nil (:type tree :inherit-from '(:scaffold test-model))
+                                      (title 
+                                        :present-as tree-branches)
+                                      (content :hidep t)))
+
+        (make-instance 'tree-with-advanced-template 
+                       :store weblocks-selenium-tests-app::*tests-store*
+                       :data-class 'test-model
+                       :view (defview nil (:type tree :inherit-from '(:scaffold test-model))
+                                      (title 
+                                        :present-as (tree-branches :straight-column-captions nil))
+                                      (content :hidep t)))
+
         (lambda (&rest args)
           (with-html 
             (:h2 "Tree with collapse/expand functionality")
             (:p "Click on the actions to see it in action")))
+
         (let ((tree))
           (flet ((expand-or-collapse-allowed-p (&key item &allow-other-keys)
                    (not (typep item 'test-model-3))))
@@ -124,6 +158,7 @@
                                                       :deleting-allowed-p nil 
                                                       :expand-allowed-p #'expand-or-collapse-allowed-p 
                                                       :collapse-allowed-p #'expand-or-collapse-allowed-p)))))))
+
         (lambda (&rest args)
           (with-html 
             (:div :style "clear:both")

@@ -209,7 +209,7 @@
              ;         └      ─      ─
              (<:as-is "&#9492;&#9472;&#9472;")
              (<:as-is "├──"))
-           (when straight-column-captions
+           (if straight-column-captions
              (loop for i in levels-left do 
                    (if (getf i :firstp)
                      (if has-children-p 
@@ -217,14 +217,14 @@
                        (<:as-is "&#9516;")
                        ;         ─
                        (<:as-is "&#9472;"))
-                     (if straight-column-captions 
-                       (<:as-is "&nbsp;")
-                       ;         ─
-                       (<:as-is "&#9472;")))
-                   (if straight-column-captions
-                     (<:as-is "&nbsp;&nbsp;")
+                     ;         ─
+                     (<:as-is "&#9472;"))
                      ;         ─      ─
-                     (<:as-is "&#9472;&#9472;"))))
+                     (<:as-is "&#9472;&#9472;"))
+             ;         ┬
+             (<:as-is "&#9516;")
+             )
+(<:as-is "&nbsp;")
            (<:as-is value))))
 
 (weblocks::deftemplate :tree-branches-presentation-field-value-wt 'tree-branches-presentation-field-value-wt)
