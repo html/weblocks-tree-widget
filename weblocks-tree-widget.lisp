@@ -93,6 +93,9 @@
                                collect (list 
                                          :firstp (= i 1)
                                          :num i))
+            :has-children-p (and 
+                              (row-expanded-p widget (getf obj :item))
+                              (get-children-values (getf obj :item) (getf obj :children)))
             :lastp lastp)))
     (map-view-fields 
       (lambda (field-info &rest args)
@@ -166,7 +169,8 @@
 (defclass tree-branches-presentation (html-presentation)
   ((straight-column-captions :initform t :initarg :straight-column-captions)))
 
-(defun tree-branches-presentation-field-value-wt (&key value level lastp single-child-p lastp-map levels-left straight-column-captions)
+(defun tree-branches-presentation-field-value-wt (&key value level lastp single-child-p lastp-map levels-left straight-column-captions &allow-other-keys)
+  "Standard tree template uses ascii symbols for displaying tree branches"
   (yaclml:with-yaclml-output-to-string
     (<:div :style "font-family:monospace;white-space:nowrap;"
            (loop for j in lastp-map 
@@ -188,6 +192,39 @@
                    (if straight-column-captions
                      (<:as-is "&nbsp;&nbsp;")
                      (<:as-is "--"))))
+           (<:as-is value))))
+
+(defun tree-branches-advanced-presentation-field-value-wt (&key value level lastp single-child-p lastp-map levels-left straight-column-captions has-children-p &allow-other-keys)
+  "This is additional tree template which uses utf-8 symbols for displaying branches"
+  (yaclml:with-yaclml-output-to-string
+    (<:div :style "font-family:monospace;white-space:nowrap;"
+           (loop for j in lastp-map 
+                 do 
+                 (if j 
+                   (<:as-is "&nbsp;")
+                   ;         │
+                   (<:as-is "&#9474;"))
+                 (<:as-is "&nbsp;&nbsp;"))
+           (if lastp  
+             ;         └      ─      ─
+             (<:as-is "&#9492;&#9472;&#9472;")
+             (<:as-is "├──"))
+           (when straight-column-captions
+             (loop for i in levels-left do 
+                   (if (getf i :firstp)
+                     (if has-children-p 
+                       ;         ┬
+                       (<:as-is "&#9516;")
+                       ;         ─
+                       (<:as-is "&#9472;"))
+                     (if straight-column-captions 
+                       (<:as-is "&nbsp;")
+                       ;         ─
+                       (<:as-is "&#9472;")))
+                   (if straight-column-captions
+                     (<:as-is "&nbsp;&nbsp;")
+                     ;         ─      ─
+                     (<:as-is "&#9472;&#9472;"))))
            (<:as-is value))))
 
 (weblocks::deftemplate :tree-branches-presentation-field-value-wt 'tree-branches-presentation-field-value-wt)
