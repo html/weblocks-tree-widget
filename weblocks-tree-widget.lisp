@@ -403,11 +403,14 @@
             (weblocks::capture-weblocks-output 
               (render-link 
                 (lambda/cc (&rest args)
-                           (when (do-confirmation 
-                                   delete-message
-                                   :type :yes/no)
-                             (weblocks-stores:delete-persistent-object (dataseq-class-store tree) item)
-                             (mark-dirty tree)))
+                  (let ((ret 
+                          (do-confirmation 
+                            delete-message
+                            :type :yes/no)))
+
+                    (when (equal ret :yes)
+                      (weblocks-stores:delete-persistent-object (dataseq-class-store tree) item)
+                      (mark-dirty tree))))
                 (widget-translate 'tree-widget :delete-item))) content)))
       (join "&nbsp;|&nbsp;" (reverse content)))))
 
