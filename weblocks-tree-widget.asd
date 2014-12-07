@@ -5,7 +5,7 @@
   :description "A tree widget for weblocks"
   :author "Olexiy Zamkoviy <olexiy.z@gmail.com>"
   :license "LLGPL"
-  :version "0.3.6"
+  :version "0.3.7"
   :depends-on (#:weblocks #:yaclml #:alexandria)
   :components ((:file "package")
                (:file "weblocks-tree-widget")))

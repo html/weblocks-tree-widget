@@ -334,7 +334,8 @@
                     (pushnew 
                       item
                       (slot-value tree 'expanded-items)
-                      :test #'equal))
+                      :test #'equal)
+                    (mark-dirty tree))
                   (widget-translate 'tree-widget :expand-item))) content))
       (when (value-with-context collapse-allowed-p :item item :tree tree :view form-view)
         (push (weblocks::capture-weblocks-output 
@@ -346,7 +347,8 @@
                       (setf (slot-value tree 'expanded-items)
                             (loop for i in (slot-value tree 'expanded-items) 
                                   unless (find i items-to-collapse :test #'equal)
-                                  collect i))))
+                                  collect i))
+                      (mark-dirty tree)))
                   (widget-translate 'tree-widget :collapse-item))) content))
       (when (value-with-context adding-allowed-p :item item :tree tree :view form-view)
         (push (weblocks::capture-weblocks-output 
